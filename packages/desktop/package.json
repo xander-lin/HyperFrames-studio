@@ -1,0 +1,27 @@
+{
+  "name": "@mystudio/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "node scripts/build-main.mjs && node scripts/copy-studio.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "node scripts/run-e2e.mjs"
+  },
+  "dependencies": {
+    "@mystudio/protocol": "workspace:*",
+    "hono": "^4.11.3",
+    "@hono/node-server": "^2.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "electron": "^45.2.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

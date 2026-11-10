@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# Runtime state written next to a video project, never source.
+.mystudio/
+.thumbnails/
+
+# The install tree produced by `scripts/install.mjs`: 275MB of Electron runtime, rebuilt on demand.
+release/

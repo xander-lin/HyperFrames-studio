@@ -1,0 +1,23 @@
+packages:
+  - "packages/*"
+
+# pnpm 12 blocks lifecycle scripts by default; esbuild needs one to place its
+# native binary, and the desktop bundle is built with esbuild. Verified in
+# found.md F-006 — without this, `pnpm install` aborts with
+# ERR_PNPM_IGNORED_BUILDS instead of installing.
+allowBuilds:
+  electron: true
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - "@hyperframes/core@0.9.21"
+  - "@hyperframes/lint@0.9.21"
+  - "@hyperframes/parsers@0.9.21"
+  - "@hyperframes/player@0.9.21"
+  - "@hyperframes/sdk@0.9.21"
+  - "@hyperframes/shader-transitions@0.9.21"
+  - "@hyperframes/studio-server@0.9.21"
+
+onlyBuiltDependencies:
+  - esbuild
+  - electron

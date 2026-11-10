@@ -1,0 +1,211 @@
+/**
+ * Interface tweaks for MyStudio.
+ *
+ * Only rules that override upstream styles without changing upstream code are kept
+ * here. Every block explains why it exists.
+ */
+
+/*
+ * The header can be hidden as a whole.
+ *
+ * Situation: a tiling desktop such as niri already draws a border and title area
+ * around every window; another 40px header from Studio just wastes space. The
+ * requirement is "it can be shown, and it can be hidden — when hidden, the sprite
+ * takes over".
+ *
+ * Key point: this is only **display:none**, the element stays mounted — so the
+ * Capture / Inspector / Export / theme logic in the header keeps working and the
+ * sprite triggers it through the headerActions registry. Unmounting the header
+ * would delete those actions along with it.
+ */
+html[data-mystudio-chrome="hidden"] [data-mystudio-header] {
+  display: none !important;
+}
+
+/*
+ * After hiding the header, Studio's root container keeps a blank strip at the top
+ * (the header used to occupy 40px). This rule collapses it so the picture really
+ * reaches the top of the window.
+ */
+html[data-mystudio-chrome="hidden"] [data-mystudio-header] + * {
+  /* The header is the first child of the flex layout and no longer takes space once
+     display:none is applied, so usually nothing extra is needed here; the selector
+     is kept for future structural changes. */
+}
+
+/*
+ * The borrowed Design panel (the E float).
+ *
+ * Background: dockview 8 puts panel content inside `.dv-render-overlay` and writes
+ * **screen coordinates** into that overlay (`left: 1489px; top: 40px` and the like).
+ * After moving it into our float, dockview's layout routine keeps writing those
+ * coordinates back (observed: cleared, then overwritten), pushing the content
+ * off-screen so the float looks blank.
+ *
+ * Remedy: pin it with `!important` at the CSS layer. CSS rules beat any inline
+ * style, and dockview only writes inline styles.
+ *
+ * Sizes are pinned to "fill the host" at the same time: the content is responsive
+ * and follows the float.
+ */
+[data-mystudio-overlay="inspector-host"] .dv-render-overlay {
+  position: relative !important;
+  left: 0 !important;
+  top: 0 !important;
+  transform: none !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* The float body scrolls itself; do not stack a second scrollbar inside. */
+[data-mystudio-overlay="inspector-host"],
+[data-mystudio-overlay="inspector-host"] .dv-render-overlay {
+  overflow: hidden !important;
+}
+
+/*
+ * Selection inside our overlays.
+ *
+ * The rule itself is defined once at the bottom of this file, for the **whole
+ * application** — see "Application-wide selection policy". Nothing overlay-specific is
+ * needed here any more: `#root` covers our floats, Studio's panels and everything else.
+ *
+ * The rules that remain in this section are about the *borrowed* Design panel, because
+ * it brings its own `user-select` declarations and must be overridden explicitly.
+ */
+
+/* The borrowed panel brings its own selection rules; force ours onto every descendant. */
+[data-mystudio-overlay="inspector-host"],
+[data-mystudio-overlay="inspector-host"] * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* …except the fields inside it, where a caret exists. */
+[data-mystudio-overlay="inspector-host"] :is(input, textarea, select, [contenteditable="true"], [data-mystudio-selectable]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+html,
+body,
+#root {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html :is(input, textarea, select, [contenteditable="true"], [contenteditable=""], .cm-content, [data-mystudio-selectable]) {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+/*
+ * The drag itself must not carry a selection either.
+ *
+ * `user-select: none` stops the *result*; this stops the *gesture* from turning into a
+ * selection in the first place, which is what showed up while dragging on empty canvas.
+ */
+html [data-mystudio-overlay="shield"],
+html [data-mystudio-overlay="annotation-canvas"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+ * The prompt editor and its block chips.
+ *
+ * ## Why the chips need styling at all
+ *
+ * A block is a node in the editor's document, and its visible label is written by its NodeView
+ * as real text (see `promptNodeView.ts`). That text has to *look* like a block — one pill, not
+ * a word — or the user cannot tell what will be delivered from what they merely typed.
+ *
+ * ## Why `white-space: nowrap`
+ *
+ * `Capture 12` is one object. Allowing it to wrap at the space would split it across two lines
+ * and make it look like two words, which is exactly the ambiguity the atom was introduced to
+ * remove.
+ */
+/*
+ * The editable element **is** the box.
+ *
+ * Everything visual goes here: the border, the background, the padding that clears the send
+ * circle and the scrollbar, and the height. Putting those on a wrapper instead split one
+ * control into two rectangles — a visible frame and, inside it, the thing that actually takes
+ * the caret — with the browser's focus ring drawn on the wrong one.
+ */
+.ms-prompt {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 78px;
+  overflow-y: auto;
+  padding: 7px 26px 26px 8px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border-input);
+  background: var(--color-input);
+  color: var(--color-text-0);
+  font-size: var(--text-step-11, 11.5px);
+  line-height: 1.9;
+  outline: none;
+  word-break: break-word;
+  /* A caret exists here, so selection is the point — see the global `user-select` rules. */
+  user-select: text;
+}
+
+/* The browser's default focus ring is drawn around the wrong rectangle in this theme. */
+.ms-prompt:focus,
+.ms-prompt:focus-visible {
+  outline: none;
+}
+
+.ms-prompt p {
+  margin: 0;
+  /* Keep the writing area's height honest: an empty paragraph still occupies a line. */
+  min-height: 1.9em;
+}
+
+.ms-prompt .ms-ref {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-2);
+  font-weight: 600;
+  font-size: var(--text-step-10, 10px);
+  line-height: 1.7;
+  white-space: nowrap;
+  vertical-align: baseline;
+  /* The label is text the user may select, but it is not theirs to edit. */
+  user-select: text;
+}
+
+/* Undone mark: still in the request, no longer on the frame. */
+.ms-prompt .ms-ref-withdrawn {
+  border-color: var(--color-danger-ink, #e5484d);
+  background: color-mix(in oklab, var(--color-danger-ink, #e5484d) 12%, transparent);
+  color: var(--color-danger-ink, #e5484d);
+  text-decoration: line-through;
+}
+
+/*
+ * The empty-state hint.
+ *
+ * A contenteditable-derived editor has no `placeholder`, so the hint is a pseudo-element. It
+ * must never intercept a click: clicking the box has to put the caret in it.
+ */
+.ms-prompt.ms-prompt-empty::before {
+  content: attr(data-placeholder);
+  /*
+   * Float it so it occupies no line box: a hint that participates in layout would push the
+   * caret down and make an empty box look taller than a filled one.
+   */
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--color-text-off);
+  line-height: 1.9;
+}

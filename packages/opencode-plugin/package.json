@@ -1,0 +1,21 @@
+{
+  "name": "@mystudio/opencode-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "description": "Receives MyStudio annotation prompts and injects them into OpenCode sessions",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.2.6",
+    "@mystudio/protocol": "workspace:*"
+  }
+}

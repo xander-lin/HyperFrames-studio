@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "allowJs": true,
+    "rootDir": ".",
+    // Upstream Studio needs the esnext lib (findLast/findLastIndex) and permits fields
+    // without `override`. This repo defaults to stricter settings, but forked upstream
+    // code has to follow upstream's requirements — otherwise you get a pile of type
+    // errors unrelated to our changes (see found.md F-008).
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "ESNext"],
+    "noImplicitOverride": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    // Upstream imports types as values in many places and relies on the compiler
+    // erasing them. verbatimModuleSyntax keeps them, producing runtime
+    // "X is not exported" errors.
+    "verbatimModuleSyntax": false,
+    "isolatedModules": true
+  },
+  "include": ["src"],
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/**/*.test.tsx"]
+}

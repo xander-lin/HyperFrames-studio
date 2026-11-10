@@ -1,0 +1,29 @@
+{
+  "name": "hyprframes-mystudio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@12.17.0",
+  "scripts": {
+    "build": "pnpm -r --filter @mystudio/protocol --filter @mystudio/studio-shell --filter @mystudio/desktop build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter @mystudio/desktop dev",
+    "start": "pnpm --filter @mystudio/desktop start",
+    "verify": "node scripts/verify-shortcuts.mjs && node scripts/verify-board.mjs && node scripts/verify-pages.mjs && node scripts/verify-window.mjs && node scripts/verify-zoom.mjs && node scripts/verify-cursors.mjs && node scripts/verify-keys.mjs && node scripts/verify-prompt.mjs && node scripts/verify-caret.mjs && node scripts/verify-oneblock.mjs && node scripts/verify-isolation.mjs && node scripts/verify-board-blocks.mjs",
+    "verify:shortcuts": "node scripts/verify-shortcuts.mjs",
+    "verify:board": "node scripts/verify-board.mjs",
+    "verify:pages": "node scripts/verify-pages.mjs",
+    "verify:window": "node scripts/verify-window.mjs",
+    "verify:zoom": "node scripts/verify-zoom.mjs",
+    "verify:cursors": "node scripts/verify-cursors.mjs",
+    "verify:keys": "node scripts/verify-keys.mjs",
+    "verify:prompt": "node scripts/verify-prompt.mjs",
+    "verify:caret": "node scripts/verify-caret.mjs",
+    "verify:oneblock": "node scripts/verify-oneblock.mjs",
+    "verify:isolation": "node scripts/verify-isolation.mjs",
+    "verify:board-blocks": "node scripts/verify-board-blocks.mjs",
+    "install:local": "node packages/desktop/scripts/install.mjs",
+    "e2e": "node scripts/e2e-installed.mjs"
+  }
+}
