@@ -70,10 +70,31 @@ async function electronDist() {
    */
   for (const entry of entries) {
     if (!entry.startsWith("electron@")) continue;
-    const candidate = join(pkgPath, entry, "node_modules", "electron", "dist");
+    const pkgDir = join(pkgPath, entry, "node_modules", "electron");
+    const candidate = join(pkgDir, "dist");
     if (existsSync(join(candidate, "electron"))) return candidate;
+    /*
+     * The package is present but its **binary** is not.
+     *
+     * `pnpm install` in a fresh tree installs `electron`'s JavaScript and skips its postinstall
+     * download (no `.npmrc` `enable-pre-post-scripts`, or scripts disabled by the environment), so
+     * `dist/` is missing while the package looks installed. Building from a clean checkout
+     * therefore failed with "the Electron runtime is not in the pnpm store" even though it was
+     * (found.md F-132).
+     *
+     * The package ships its own downloader; running it is the same step npm would have run.
+     */
+    const installer = join(pkgDir, "install.js");
+    if (existsSync(installer)) {
+      console.log("[install] the Electron binary is missing; downloading it…");
+      const { execFileSync } = await import("node:child_process");
+      execFileSync(process.execPath, [installer], { cwd: pkgDir, stdio: "inherit" });
+      if (existsSync(join(candidate, "electron"))) return candidate;
+    }
   }
-  throw new Error("Cannot build the install: the Electron runtime is not in the pnpm store");
+  throw new Error(
+    "Cannot build the install: the Electron runtime is not in the pnpm store, and its download failed",
+  );
 }
 
 async function main() {
