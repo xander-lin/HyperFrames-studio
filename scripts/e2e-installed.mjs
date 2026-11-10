@@ -237,6 +237,7 @@ async function main() {
 
   let runner = null;
   let createdSubscription = null;
+  let createdPresence = null;
   try {
     await until("the app server", () => appLog.includes("App server at"));
     check("the installed app serves the given project", true);
@@ -304,16 +305,42 @@ async function main() {
       ? join(process.env.XDG_RUNTIME_DIR, "mystudio")
       : join(tmpdir(), "mystudio");
     const appsDir = join(runtimeRoot, "apps");
-    const advertised = await until("the app to advertise itself", async () => {
-      const names = await readdir(appsDir).catch(() => []);
-      return names.length > 0 ? names : null;
-    });
-    const presence = JSON.parse(await readFile(join(appsDir, advertised[0]), "utf8"));
+    /*
+     * Find **this run's** presence record, not merely the first one.
+     *
+     * Presence files from earlier runs are not removed when a process is killed, so the directory
+     * routinely holds records whose pid is dead and whose project is a temp path from a previous
+     * test. Taking `advertised[0]` therefore picked a stale entry and reported the wrong project —
+     * a failure of the probe, not of the app (found.md F-132).
+     *
+     * The record is matched on the project directory (unique per run) and on its pid being alive.
+     */
+    const presence = await until(
+      "this run's presence record",
+      async () => {
+        const names = await readdir(appsDir).catch(() => []);
+        for (const name of names) {
+          const entry = JSON.parse(await readFile(join(appsDir, name), "utf8").catch(() => "{}"));
+          if (entry.projectDir !== projectDir) continue;
+          createdPresence = join(appsDir, name);
+          if (typeof entry.pid !== "number") continue;
+          try {
+            process.kill(entry.pid, 0);
+          } catch {
+            continue; // dead pid: a stale record, skip it
+          }
+          return entry;
+        }
+        return null;
+      },
+      30_000,
+    ).catch(() => null);
     check(
-      "presence names the right project and a live pid",
-      presence.projectDir === projectDir && typeof presence.pid === "number",
-      JSON.stringify({ dir: presence.projectDir, pid: presence.pid }),
+      "this run has a presence record with a live pid",
+      presence !== null,
+      presence ? JSON.stringify({ dir: presence.projectDir, pid: presence.pid }) : "none found",
     );
+    if (!presence) throw new Error("No presence record for this run");
 
     const subsDir = join(runtimeRoot, "subscriptions", presence.appId);
     await mkdir(subsDir, { recursive: true });
@@ -420,6 +447,12 @@ async function main() {
      * process would otherwise look like a live app for the next five minutes (found.md F-132).
      */
     if (createdSubscription) await rm(createdSubscription, { force: true }).catch(() => undefined);
+    /*
+     * Remove this run's presence record too. The app writes it on start and removes it on a clean
+     * exit, but a `SIGTERM` kill skips that — leaving a record whose pid is gone. Left alone,
+     * these accumulate and make the next run's presence lookup ambiguous (found.md F-132).
+     */
+    if (createdPresence) await rm(createdPresence, { force: true }).catch(() => undefined);
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   }
 
