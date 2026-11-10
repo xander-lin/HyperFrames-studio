@@ -182,12 +182,23 @@ exec "$root/electron/electron" \\
   await writeFile(launcherPath, launcher, "utf8");
   await chmod(launcherPath, 0o755);
 
-  // A desktop entry, so the app is launchable without knowing the path.
+  /*
+   * A desktop entry, so the app is launchable without knowing the path.
+   *
+   * `MYSTUDIO_DESKTOP_EXEC` exists because the entry must name the path the app **will** live at
+   * once packaged, which is not the prefix it was built into. Writing the build prefix there
+   * produced a launcher pointing at `/tmp/…/install`, which pacman reports as a reference to
+   * `$srcdir` — and which would simply not exist on the user's machine.
+   *
+   * The default is the launcher inside this prefix, which is correct for a plain
+   * `install.mjs --prefix=…` run.
+   */
+  const execPath = process.env.MYSTUDIO_DESKTOP_EXEC?.trim() || join(prefix, "mystudio");
   const entry = `[Desktop Entry]
 Type=Application
 Name=MyStudio
 Comment=Annotate HyperFrames frames and send them to OpenCode
-Exec=${launcherPath} %f
+Exec=${execPath} %f
 Terminal=false
 Categories=AudioVideo;Video;Development;
 MimeType=inode/directory;
