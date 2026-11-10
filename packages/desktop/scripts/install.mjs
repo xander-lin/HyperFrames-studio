@@ -1,36 +1,41 @@
 /**
- * Build an installable copy of MyStudio, without electron-builder.
+ * Layout the app so the **system's** Electron can run it.
  *
- * ## Why not electron-builder
+ * ## Why the Electron runtime is not bundled
  *
- * It is a large dependency that produces a self-extracting installer for a specific
- * distribution. What this app actually needs is: **the Electron runtime, our bundle, and a
- * launcher** that knows where both are. That is four steps and no third-party tool, and it keeps
- * the result inspectable — if the install misbehaves, every file in it is one we wrote.
+ * It used to be. The install tree carried a full 275 MB copy of Electron, which made a 121 MB
+ * package for an app whose own code is 7.4 MB — and that copy was a *dependency in disguise*:
+ * every Chromium security fix meant rebuilding and reshipping it, and a user with `electron`
+ * already installed had two runtimes on disk.
  *
- * ## What "installed" has to mean
+ * Electron is a normal dependency. Arch ships it (`extra/electron` → `electron44`), and the
+ * distribution's own wrapper already accepts an app directory, so the package declares
+ * `depends=(electron)` and installs only our code (found.md F-133).
  *
- * The install must not depend on this repository. After it is finished:
+ * ## What this script therefore does
  *
- * - the launcher can be called from anywhere (it resolves its own location, not the cwd);
- * - the app reads the Studio build from its own `resources/`, not from `packages/desktop`;
- * - passing a project directory works exactly as in development.
- *
- * ## Layout of the installed tree
+ * Nothing about runtimes. It writes:
  *
  * ```
  * <prefix>/
- *   mystudio                     launcher (executable shell script)
+ *   mystudio            launcher that execs the system Electron on `app/`
  *   app/
- *     package.json               name + main, so Electron treats it as an app
- *     dist/main.js               the bundled main process (workspace deps inlined)
- *     dist/studio/               the Studio build the window loads
- *   electron/                    the Electron runtime, unmodified
+ *     package.json      name + main, so Electron treats the directory as an app
+ *     dist/main.js      the bundled main process (workspace deps inlined)
+ *     dist/studio/      the Studio build the window loads
  * ```
  *
- * The Electron runtime is copied rather than symlinked: a symlink into a pnpm store breaks the
- * moment that store is pruned or the repository moves, and the point of installing is to stop
- * depending on both.
+ * ## Finding the Electron binary
+ *
+ * A launcher that hard-codes `/usr/bin/electron` breaks on distributions that only ship versioned
+ * names (`electron44`, `electron39`). It searches, in order:
+ *
+ * 1. `$MYSTUDIO_ELECTRON`, so a user can point at a specific build;
+ * 2. `electron` on `$PATH`;
+ * 3. the highest `electronNN` on `$PATH`, numerically.
+ *
+ * The search happens at **launch** time, not install time, so upgrading Electron later does not
+ * require reinstalling this app.
  */
 
 import { cp, mkdir, readFile, rm, writeFile, chmod, stat } from "node:fs/promises";
@@ -40,77 +45,32 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
-const repoRoot = resolve(desktopRoot, "..", "..");
 
 /** Where the installed tree goes. `--prefix` overrides. */
 const prefixArg = process.argv.find((arg) => arg.startsWith("--prefix="));
 const prefix = prefixArg
   ? resolve(prefixArg.slice("--prefix=".length))
-  : resolve(repoRoot, "release");
+  : resolve(desktopRoot, "..", "..", "release");
 
 function require_(value, what) {
   if (!existsSync(value)) {
-    throw new Error(`Cannot build the install: ${what} is missing at ${value}`);
+    throw new Error(`Cannot lay out the app: ${what} is missing at ${value}`);
   }
   return value;
 }
 
-/** Resolve the Electron runtime distribution shipped by the `electron` package. */
-async function electronDist() {
-  const pkgPath = require_(
-    join(repoRoot, "node_modules", ".pnpm"),
-    "the pnpm store",
-  );
-  const { readdir } = await import("node:fs/promises");
-  const entries = await readdir(pkgPath);
-  /*
-   * Several copies of the `electron` package exist (one per peer-dependency variant). Any of
-   * them contains the same binary, so the first one with a `dist/` is used rather than pinning an
-   * exact directory name — pinning would break on a version bump for no benefit.
-   */
-  for (const entry of entries) {
-    if (!entry.startsWith("electron@")) continue;
-    const pkgDir = join(pkgPath, entry, "node_modules", "electron");
-    const candidate = join(pkgDir, "dist");
-    if (existsSync(join(candidate, "electron"))) return candidate;
-    /*
-     * The package is present but its **binary** is not.
-     *
-     * `pnpm install` in a fresh tree installs `electron`'s JavaScript and skips its postinstall
-     * download (no `.npmrc` `enable-pre-post-scripts`, or scripts disabled by the environment), so
-     * `dist/` is missing while the package looks installed. Building from a clean checkout
-     * therefore failed with "the Electron runtime is not in the pnpm store" even though it was
-     * (found.md F-132).
-     *
-     * The package ships its own downloader; running it is the same step npm would have run.
-     */
-    const installer = join(pkgDir, "install.js");
-    if (existsSync(installer)) {
-      console.log("[install] the Electron binary is missing; downloading it…");
-      const { execFileSync } = await import("node:child_process");
-      execFileSync(process.execPath, [installer], { cwd: pkgDir, stdio: "inherit" });
-      if (existsSync(join(candidate, "electron"))) return candidate;
-    }
-  }
-  throw new Error(
-    "Cannot build the install: the Electron runtime is not in the pnpm store, and its download failed",
-  );
-}
-
 async function main() {
-  const dist = await electronDist();
   const mainBundle = require_(join(desktopRoot, "dist", "main.js"), "the bundled main process");
   /*
-   * The **directory** is what gets copied. `require_` takes the `index.html` only to prove the
-   * build is present and complete — passing that path into `cp` would copy one file and then
-   * fail with a message about a missing `index.html`, which reads like a packaging bug rather
-   * than the wrong variable.
+   * The **directory** is what gets copied. `require_` checks the `index.html` only to prove the
+   * build is complete — passing that path into `cp` would copy one file and then fail with a
+   * message about a missing `index.html`, which reads like a packaging bug rather than the wrong
+   * variable (found.md F-131).
    */
   const studio = require_(join(desktopRoot, "dist", "studio"), "the Studio build");
   require_(join(studio, "index.html"), "the Studio build's entry page");
 
-  console.log(`[install] prefix  ${prefix}`);
-  console.log(`[install] electron ${dist}`);
+  console.log(`[layout] prefix ${prefix}`);
 
   /*
    * Rebuild from scratch. A half-replaced tree is worse than none: the launcher would run a
@@ -119,31 +79,17 @@ async function main() {
   await rm(prefix, { recursive: true, force: true });
   await mkdir(join(prefix, "app", "dist"), { recursive: true });
 
-  console.log("[install] copying the Electron runtime…");
-  await cp(dist, join(prefix, "electron"), { recursive: true, verbatimSymlinks: false });
-
-  console.log("[install] copying the app…");
   await cp(mainBundle, join(prefix, "app", "dist", "main.js"));
   const mapPath = join(desktopRoot, "dist", "main.js.map");
   if (existsSync(mapPath)) await cp(mapPath, join(prefix, "app", "dist", "main.js.map"));
-  /*
-   * `cp` needs the source to end in a path component, not in a directory that already exists —
-   * copying *into* an existing directory would nest it (`dist/studio/studio`). Recreating the
-   * destination first is what makes this a rename rather than a merge.
-   */
   const installedStudio = join(prefix, "app", "dist", "studio");
-  await rm(installedStudio, { recursive: true, force: true });
   await cp(studio, installedStudio, { recursive: true });
-  const copiedIndex = join(installedStudio, "index.html");
-  if (!existsSync(copiedIndex)) {
-    throw new Error(`The Studio build did not copy: ${copiedIndex} is missing`);
-  }
 
   /*
    * A minimal `package.json`.
    *
    * Electron needs `main` to find the entry point, and `type: module` because the bundle is ESM.
-   * Nothing else is copied: the main-process bundle inlines every workspace dependency, so an
+   * Nothing else is copied: the main-process bundle inlines every workspace dependency, so the
    * installed tree has no `node_modules` at all.
    */
   const pkg = {
@@ -159,24 +105,71 @@ async function main() {
   /*
    * The launcher.
    *
-   * `readlink -f` resolves the script through symlinks, so installing it as a symlink on `$PATH`
-   * still finds the real tree. `--ozone-platform` is deliberately **not** passed: the app decides
-   * that from the environment (see `src/platform.ts`), and a launcher that overrides it would
-   * quietly reintroduce the XWayland input-method defect.
+   * `readlink -f` resolves through symlinks, so installing this as a symlink on `$PATH` still
+   * finds the real tree. `--ozone-platform` is deliberately **not** passed: the app decides its
+   * backend from the environment (`src/platform.ts`), and a launcher that overrode it would
+   * quietly reintroduce the XWayland input-method defect (found.md F-127).
    *
    * `"$@"` is forwarded verbatim so a project directory reaches `projectFromArgv` unchanged.
    */
   const launcher = `#!/bin/sh
-# MyStudio launcher. Generated by scripts/install.mjs — edits here are overwritten.
+# MyStudio launcher. Generated by packages/desktop/scripts/install.mjs — edits are overwritten.
 set -eu
 
 self=$(readlink -f "$0")
 root=$(dirname "$self")
 
-exec "$root/electron/electron" \\
-  --no-sandbox \\
-  "$root/app" \\
-  "$@"
+# Find Electron. A distribution may ship only versioned names, so "electron" alone is not enough.
+find_electron() {
+  if [ -n "\${MYSTUDIO_ELECTRON:-}" ]; then
+    printf '%s' "$MYSTUDIO_ELECTRON"
+    return 0
+  fi
+  if command -v electron >/dev/null 2>&1; then
+    command -v electron
+    return 0
+  fi
+  # Highest versioned name wins: electron44 beats electron39.
+  #
+  # Search $PATH rather than globbing the current directory: the versioned glob does not expand
+  # against /usr/bin unless we are standing in it, and under set -eu the unexpanded literal is
+  # then taken as a command name and fails (found.md F-133).
+  best=""
+  bestver=0
+  old_ifs=$IFS
+  IFS=:
+  for dir in $PATH; do
+    IFS=$old_ifs
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    for candidate in "$dir"/electron[0-9]*; do
+      [ -x "$candidate" ] || continue
+      name=$(basename "$candidate")
+      ver=\${name#electron}
+      case "$ver" in
+        ''|*[!0-9]*) continue ;;
+      esac
+      if [ "$ver" -gt "$bestver" ]; then
+        bestver=$ver
+        best=$candidate
+      fi
+    done
+    IFS=:
+  done
+  IFS=$old_ifs
+  if [ -n "$best" ]; then
+    printf '%s' "$best"
+    return 0
+  fi
+  return 1
+}
+
+electron_bin=$(find_electron) || {
+  echo "MyStudio: Electron was not found." >&2
+  echo "Install it (Arch: pacman -S electron) or set MYSTUDIO_ELECTRON=/path/to/electron." >&2
+  exit 1
+}
+
+exec "$electron_bin" "$root/app" "$@"
 `;
   const launcherPath = join(prefix, "mystudio");
   await writeFile(launcherPath, launcher, "utf8");
@@ -186,12 +179,9 @@ exec "$root/electron/electron" \\
    * A desktop entry, so the app is launchable without knowing the path.
    *
    * `MYSTUDIO_DESKTOP_EXEC` exists because the entry must name the path the app **will** live at
-   * once packaged, which is not the prefix it was built into. Writing the build prefix there
-   * produced a launcher pointing at `/tmp/…/install`, which pacman reports as a reference to
-   * `$srcdir` — and which would simply not exist on the user's machine.
-   *
-   * The default is the launcher inside this prefix, which is correct for a plain
-   * `install.mjs --prefix=…` run.
+   * once packaged, which is not the prefix it was laid out into. Writing the build prefix there
+   * produced a launcher pointing into a packager's temp directory, which pacman reports as a
+   * reference to `$srcdir` and which would not exist on the user's machine (found.md F-132).
    */
   const execPath = process.env.MYSTUDIO_DESKTOP_EXEC?.trim() || join(prefix, "mystudio");
   const entry = `[Desktop Entry]
@@ -207,14 +197,15 @@ MimeType=inode/directory;
   await writeFile(join(prefix, "share", "applications", "mystudio.desktop"), entry, "utf8");
 
   const installed = await stat(launcherPath);
-  const executable = (installed.mode & 0o111) !== 0;
-  if (!executable) throw new Error("The launcher was written but is not executable");
+  if ((installed.mode & 0o111) === 0) {
+    throw new Error("The launcher was written but is not executable");
+  }
 
-  console.log(`[install] launcher ${launcherPath}`);
-  console.log("[install] done");
+  console.log(`[layout] launcher ${launcherPath}`);
+  console.log("[layout] done (Electron is used from the system, not bundled)");
 }
 
 main().catch((error) => {
-  console.error(`\n[install] FAILED ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`\n[layout] FAILED ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
